@@ -125,7 +125,7 @@ def get_center(pts):
     return center
 def normalize_info(cam_extrinsics,pcd):
     poses = []
-    pts = torch.from_numpy(pcd[0])
+    pts = torch.from_numpy(pcd[0]).float()
     for idx, key in enumerate(cam_extrinsics):
 
 
@@ -146,7 +146,7 @@ def normalize_info(cam_extrinsics,pcd):
     tc = center.reshape(3, 1)
     t = -tc
   
-    inv_trans = torch.cat([torch.cat([torch.eye(3), t], dim=1), torch.as_tensor([[0.,0.,0.,1.]])], dim=0)
+    inv_trans = torch.cat([torch.cat([torch.eye(3, dtype=torch.float32), t], dim=1), torch.as_tensor([[0.,0.,0.,1.]], dtype=torch.float32)], dim=0)
     poses_norm = (inv_trans @ poses)[:,:3]
    
     scale = (pts_fg - tc.T).norm(p=2, dim=-1).max()
@@ -184,11 +184,11 @@ def storePly(path, xyz, rgb):
     ply_data.write(path)
 def normalize_scene(pcd,cam_infos_unsorted,inv_trans, scale):
     
-    pts = torch.from_numpy(pcd[0]).cuda()
+    pts = torch.from_numpy(pcd[0]).float().cuda()
     
     bb=torch.cat([pts, torch.ones_like(pts[:,0:1])], dim=-1)[...,None].cuda()
   
-    pts = (inv_trans.cuda() @ bb)[:,:3,0]
+    pts = (inv_trans.float().cuda() @ bb)[:,:3,0]
     pts = pts / scale
     
     
@@ -198,7 +198,8 @@ def normalize_scene(pcd,cam_infos_unsorted,inv_trans, scale):
     for cam in cam_infos_unsorted:
         W2C = getWorld2View2(cam.R, cam.T)
         C2W = np.linalg.inv(W2C)
-        C2W_norm = (inv_trans @ C2W)
+        C2W_torch = torch.from_numpy(C2W).float()
+        C2W_norm = (inv_trans.float() @ C2W_torch).numpy()
         C2W_norm[...,3] /= scale
         C2W_norm[3,3] = 1
         # C2W_norm = (custom_inv_trans @ C2W_norm)
@@ -255,8 +256,8 @@ def readColmapSceneInfo(path, images, eval, lod, llffhold=8,scale_input=1.0,cent
     cam_infos_unsorted = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, images_folder=os.path.join(path, reading_dir))
     #Normalize with given parameters or automatically
     if scale_input!=0.0 or center_input!=[0,0,0]:
-        tc = torch.tensor(center_input).reshape(3, 1)
-        inv_trans = torch.cat([torch.cat([torch.eye(3), -tc], dim=1), torch.as_tensor([[0.,0.,0.,1.]])], dim=0)
+        tc = torch.tensor(center_input, dtype=torch.float32).reshape(3, 1)
+        inv_trans = torch.cat([torch.cat([torch.eye(3, dtype=torch.float32), -tc], dim=1), torch.as_tensor([[0.,0.,0.,1.]], dtype=torch.float32)], dim=0)
         scale = scale_input
     else:
         inv_trans, scale, tc = normalize_info(cam_extrinsics, pcd)
