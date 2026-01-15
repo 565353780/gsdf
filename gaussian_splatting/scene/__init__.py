@@ -17,7 +17,6 @@ from gaussian_splatting.scene.dataset_readers import sceneLoadTypeCallbacks
 from gaussian_splatting.scene.gaussian_model import GaussianModel
 from gaussian_splatting.arguments import ModelParams
 from gaussian_splatting.utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
-import torch
 
 class Scene:
 
@@ -32,25 +31,56 @@ class Scene:
         self.gaussians = gaussians
         self.scale=0
         self.center=[0,0,0]
+        
+        # 检查并清理 source_path
+        if args.source_path is None:
+            raise ValueError(f"source_path is None. Please check your configuration file.")
+        
+        # 清理路径，去除引号等无效字符
+        source_path = str(args.source_path).strip().strip('"').strip("'")
+        # 更新 args.source_path 为清理后的路径（用于后续使用）
+        args.source_path = source_path
 
         if load_iteration:
             if load_iteration == -1:
                 self.loaded_iter = searchForMaxIteration(os.path.join(self.model_path, "point_cloud"))
             else:
                 self.loaded_iter = load_iteration
-                
+
             print("Loading trained model at iteration {}".format(self.loaded_iter))
 
         self.train_cameras = {}
         self.test_cameras = {}
 
-        if os.path.exists(os.path.join(args.source_path, "sparse")) or os.path.exists(os.path.join(args.source_path, "colmap")):
-            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, args.lod,scale_input=given_scale,center_input=given_center)
-        elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
+        colmap_path = os.path.join(source_path, "sparse")
+        colmap_path_alt = os.path.join(source_path, "colmap")
+        
+        if not os.path.exists(colmap_path) and not os.path.exists(colmap_path_alt):
+            error_msg = (
+                f"COLMAP path not found!\n"
+                f"  source_path: {source_path}\n"
+                f"  Tried paths:\n"
+                f"    - {colmap_path}\n"
+                f"    - {colmap_path_alt}\n"
+                f"  Please check that:\n"
+                f"    1. The path in your config file is correct\n"
+                f"    2. The 'sparse' or 'colmap' directory exists in the source_path\n"
+                f"    3. There are no extra quotes or spaces in the path"
+            )
+            raise FileNotFoundError(error_msg)
+        if os.path.exists(colmap_path) or os.path.exists(colmap_path_alt):
+            scene_info = sceneLoadTypeCallbacks["Colmap"](source_path, args.images, args.eval, args.lod,scale_input=given_scale,center_input=given_center)
+        elif os.path.exists(os.path.join(source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
-            scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)
+            scene_info = sceneLoadTypeCallbacks["Blender"](source_path, args.white_background, args.eval)
         else:
-            assert False, "Could not recognize scene type!"
+            raise ValueError(
+                f"Could not recognize scene type!\n"
+                f"  source_path: {source_path}\n"
+                f"  Expected one of:\n"
+                f"    - {colmap_path} or {colmap_path_alt} (for COLMAP dataset)\n"
+                f"    - {os.path.join(source_path, 'transforms_train.json')} (for Blender dataset)"
+            )
         self.center = scene_info.center
         self.scale = scene_info.scale
         if not self.loaded_iter:

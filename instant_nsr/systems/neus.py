@@ -154,8 +154,10 @@ class NeuSSystem(BaseSystem):
 
         if self.config.model.if_gaussian:
             parser = ArgumentParser(description="Training script parameters")
-            parser.source_path = config.dataset.root_dir
-            print(parser.source_path)
+            # 清理路径，去除引号等无效字符
+            root_dir = config.dataset.root_dir.strip().strip('"').strip("'")
+            parser.source_path = root_dir
+            print(f"source_path: {parser.source_path}")
             lp = ModelParams(parser)
             op = OptimizationParams(parser)
             pp = PipelineParams(parser)
@@ -180,7 +182,7 @@ class NeuSSystem(BaseSystem):
             group = parser.add_mutually_exclusive_group(required=True)
             group.add_argument('--train', action='store_true')
             out_path = "output/"+config.tag
-            fake_input = ["--source_path",config.dataset.root_dir,"--model_path",out_path]
+            fake_input = ["--source_path", root_dir, "--model_path", out_path]
             fake_input.extend(sys.argv[1:])
             args = parser.parse_args(fake_input)
             os.makedirs(args.model_path, exist_ok=True)
@@ -196,7 +198,7 @@ class NeuSSystem(BaseSystem):
             self.args=args
             bg_color = [1, 1, 1] if lp.extract(args).white_background else [0, 0, 0]
             self.background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
-            
+
             self.op =op.extract(args)
             self.piplin=pp.extract(args)
             self.lp = lp.extract(args)
@@ -218,13 +220,13 @@ class NeuSSystem(BaseSystem):
             else:
                 self.progress_bar = tqdm(range(0, self.op.iterations), desc="Training progress")               
                 self.scene = Scene(self.lp, self.gaussians, shuffle=False,given_scale=self.config.dataset.neuralangelo_scale,given_center=self.config.dataset.neuralangelo_center)
-                
+
                 self.gaussians.training_setup(self.op)
                 self.viewpoint_stack = self.scene.getTrainCameras().copy()
                 self.viewpoint_candidate = self.scene.getTrainCameras().copy()
                 # pretrain scaffold gs
                 self.pretrain_gs()
-          
+                
     def prepare(self):
         self.criterions = {
             'psnr': PSNR()
